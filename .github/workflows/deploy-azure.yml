@@ -10,12 +10,16 @@ on:
 
 env:
   # ── Azure Container Registry ──
-  ACR_NAME: requisitionbackendacr          # change to your ACR name
+  ACR_NAME: requisitionbackendacr
   IMAGE_NAME: requisition-backend
   # ── Azure Container Apps ──
-  RESOURCE_GROUP: requisition-rg            # your Azure resource group
-  CONTAINER_APP_NAME: requisition-backend   # your container app name
-  CONTAINER_APP_ENV: requisition-env        # your container apps environment
+  RESOURCE_GROUP: requisition-rg
+  CONTAINER_APP_NAME: requisition-backend
+  CONTAINER_APP_ENV: requisition-env
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
   # ━━━━━━━━━━━━━━  BUILD & PUSH  ━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -30,7 +34,9 @@ jobs:
       - name: 🔐 Login to Azure
         uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: 🔐 Login to ACR
         run: az acr login --name ${{ env.ACR_NAME }}
@@ -61,7 +67,9 @@ jobs:
       - name: 🔐 Login to Azure
         uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: 🚀 Deploy Container App
         uses: azure/container-apps-deploy-action@v1
