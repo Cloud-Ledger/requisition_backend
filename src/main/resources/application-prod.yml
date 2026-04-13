@@ -1,0 +1,43 @@
+spring:
+  datasource:
+    driverClassName: com.mysql.cj.jdbc.Driver
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://cloudledgerzim.mysql.database.azure.com:3306/cloudledgerzim_db?autoReconnect=true&useSSL=true}
+    username: ${SPRING_DATASOURCE_USERNAME:ngonieclz}
+    password: ${SPRING_DATASOURCE_PASSWORD:}
+    initialize: false
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+  hateoas:
+    use-hal-as-default-json-media-type: false
+
+server:
+  port: ${SERVER_PORT:8080}
+
+---
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    operationsSorter: method
+
+---
+# Uncomment below if you need SSL termination at the app level.
+# On Azure Container Apps, SSL is typically handled by the ingress.
+#server:
+#  ssl:
+#    key-alias: server
+#    key-store-type: JKS
+#    key-password: ${SSL_KEY_PASSWORD}
+#    key-store-password: ${SSL_KEYSTORE_PASSWORD}
+#    key-store: classpath:cimas_co_zw.jks
+
+application:
+  security:
+    jwt:
+      secret-key: ${JWT_SECRET_KEY:404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}
+      expiration: 1200000
+      refresh-token:
+        expiration: 3600000
+

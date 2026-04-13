@@ -1,0 +1,11 @@
+.git
+.gitignore
+target/
+*.md
+LICENSE
+assets/
+attachments/
+.idea/
+*.iml
+docker-compose.yml
+

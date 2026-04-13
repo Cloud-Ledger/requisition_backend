@@ -1,0 +1,34 @@
+Spring:
+  datasource:
+    driverClassName: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://cloudledgerzim.mysql.database.azure.com:3306/cloudledgerzim_db?autoReconnect=true&useSSL=true
+    username: ngonieclz
+    password: MukudzeiCL#
+    initialize: false
+  jpa:
+    hibernate:
+      ddl-auto: update
+#    show-sql: true
+
+server:
+  port: ${SERVER_PORT:2400}
+ # address: ${SERVER_ADDRESS:130.1.0.81}
+---
+spring:
+  hateoas:
+    use-hal-as-default-json-media-type: false
+---
+spring-doc:
+  api-docs:
+    path: /api-docs
+    swagger-ui:
+      operationsSorter: method
+---
+application:
+  security:
+    jwt:
+      secret-key: 404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970
+      expiration: 1200000
+      refresh-token:
+        expiration: 3600000
+

@@ -1,0 +1,25 @@
+#version: '3.8'
+#
+#services:
+#  mysql:
+#    image: mysql
+#    container_name: mysql-container
+#    restart: always
+#    environment:
+#      MYSQL_ROOT_PASSWORD: Maita#12
+#      MYSQL_DATABASE: claims_management
+#
+#  springboot:
+#    build:
+#      context: .
+#      dockerfile: Dockerfile
+#    container_name: springboot-container
+#    restart: always
+#    depends_on:
+#      - mysql
+#    ports:
+#      - "8080:8080"
+#    environment:
+#      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/claims_management
+#      SPRING_DATASOURCE_USERNAME: root
+#      SPRING_DATASOURCE_PASSWORD: Maita#12
