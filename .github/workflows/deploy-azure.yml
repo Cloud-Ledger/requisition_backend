@@ -72,19 +72,35 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: 🚀 Deploy Container App
-        uses: azure/container-apps-deploy-action@v1
-        with:
-          resourceGroup: ${{ env.RESOURCE_GROUP }}
-          containerAppName: ${{ env.CONTAINER_APP_NAME }}
-          containerAppEnvironment: ${{ env.CONTAINER_APP_ENV }}
-          imageToDeploy: ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ needs.build.outputs.image_tag }}
-          targetPort: 8080
-          ingress: external
-          environmentVariables: >-
-            SPRING_PROFILES_ACTIVE=prod
-            SPRING_DATASOURCE_URL=${{ secrets.DB_URL }}
-            SPRING_DATASOURCE_USERNAME=${{ secrets.DB_USERNAME }}
-            SPRING_DATASOURCE_PASSWORD=${{ secrets.DB_PASSWORD }}
-            JWT_SECRET_KEY=${{ secrets.JWT_SECRET_KEY }}
-            SERVER_PORT=8080
+        run: |
+          az containerapp create \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --environment ${{ env.CONTAINER_APP_ENV }} \
+            --image ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ needs.build.outputs.image_tag }} \
+            --registry-server ${{ env.ACR_NAME }}.azurecr.io \
+            --target-port 8080 \
+            --ingress external \
+            --env-vars \
+              SPRING_PROFILES_ACTIVE=prod \
+              SPRING_DATASOURCE_URL="${{ secrets.DB_URL }}" \
+              SPRING_DATASOURCE_USERNAME="${{ secrets.DB_USERNAME }}" \
+              SPRING_DATASOURCE_PASSWORD="${{ secrets.DB_PASSWORD }}" \
+              JWT_SECRET_KEY="${{ secrets.JWT_SECRET_KEY }}" \
+              SERVER_PORT=8080 \
+            --min-replicas 0 \
+            --max-replicas 1 \
+            --query "properties.configuration.ingress.fqdn" \
+            --output tsv || \
+          az containerapp update \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ needs.build.outputs.image_tag }} \
+            --set-env-vars \
+              SPRING_PROFILES_ACTIVE=prod \
+              SPRING_DATASOURCE_URL="${{ secrets.DB_URL }}" \
+              SPRING_DATASOURCE_USERNAME="${{ secrets.DB_USERNAME }}" \
+              SPRING_DATASOURCE_PASSWORD="${{ secrets.DB_PASSWORD }}" \
+              JWT_SECRET_KEY="${{ secrets.JWT_SECRET_KEY }}" \
+              SERVER_PORT=8080
 

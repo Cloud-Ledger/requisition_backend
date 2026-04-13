@@ -1,4 +1,4 @@
-Spring:
+spring:
   datasource:
     driverClassName: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://cloudledgerzim.mysql.database.azure.com:3306/cloudledgerzim_db?autoReconnect=true&useSSL=true
