@@ -1,13 +1,16 @@
 spring:
   datasource:
-    driverClassName: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://cloudledgerzim.mysql.database.azure.com:3306/cloudledgerzim_db?autoReconnect=true&useSSL=true
-    username: ngonieclz
+    driverClassName: com.microsoft.sqlserver.jdbc.SQLServerDriver
+    url: jdbc:sqlserver://ngonieclz.database.windows.net:1433;database=free-sql-db-2155917;encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;loginTimeout=30;
+    username: ngonieclz@ngonieclz
     password: MukudzeiCL#
     initialize: false
   jpa:
     hibernate:
       ddl-auto: update
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.SQLServerDialect
 #    show-sql: true
 
 server:
