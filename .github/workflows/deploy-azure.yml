@@ -11,7 +11,7 @@ on:
 env:
   # ── GitHub Container Registry (FREE) ──
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository_owner }}/requisition-backend
+  IMAGE_NAME: cloud-ledger/requisition-backend
   # ── Azure Container Apps ──
   RESOURCE_GROUP: requisition-rg
   CONTAINER_APP_NAME: requisition-backend
