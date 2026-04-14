@@ -1,5 +1,5 @@
 # ──────────────────────────────────────────────────────────────
-#  CI/CD – Build Docker image → Push to ACR → Deploy to Azure Container Apps
+#  CI/CD – Build Docker image → Push to GHCR → Deploy to Azure Container Apps
 # ──────────────────────────────────────────────────────────────
 name: Build & Deploy to Azure Container Apps
 
@@ -9,9 +9,9 @@ on:
   workflow_dispatch:          # allow manual trigger from GitHub UI
 
 env:
-  # ── Azure Container Registry ──
-  ACR_NAME: requisitionbackendacr
-  IMAGE_NAME: requisition-backend
+  # ── GitHub Container Registry (FREE) ──
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/requisition-backend
   # ── Azure Container Apps ──
   RESOURCE_GROUP: requisition-rg
   CONTAINER_APP_NAME: requisition-backend
@@ -20,6 +20,7 @@ env:
 permissions:
   id-token: write
   contents: read
+  packages: write            # needed to push to GHCR
 
 jobs:
   # ━━━━━━━━━━━━━━  BUILD & PUSH  ━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -31,15 +32,12 @@ jobs:
       - name: 📥 Checkout source
         uses: actions/checkout@v4
 
-      - name: 🔐 Login to Azure
-        uses: azure/login@v2
+      - name: 🔐 Login to GitHub Container Registry
+        uses: docker/login-action@v3
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: 🔐 Login to ACR
-        run: az acr login --name ${{ env.ACR_NAME }}
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 🏷️ Set image tag
         id: tag
@@ -48,11 +46,11 @@ jobs:
       - name: 🐳 Build & push Docker image
         run: |
           docker build \
-            -t ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.TAG }} \
-            -t ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest \
+            -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.TAG }} \
+            -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
             .
-          docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.TAG }}
-          docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.TAG }}
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
 
     outputs:
       image_tag: ${{ steps.tag.outputs.TAG }}
@@ -77,8 +75,10 @@ jobs:
             --name ${{ env.CONTAINER_APP_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --environment ${{ env.CONTAINER_APP_ENV }} \
-            --image ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ needs.build.outputs.image_tag }} \
-            --registry-server ${{ env.ACR_NAME }}.azurecr.io \
+            --image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.build.outputs.image_tag }} \
+            --registry-server ${{ env.REGISTRY }} \
+            --registry-username ${{ github.actor }} \
+            --registry-password ${{ secrets.GHCR_PAT }} \
             --target-port 8080 \
             --ingress external \
             --env-vars \
@@ -95,7 +95,7 @@ jobs:
           az containerapp update \
             --name ${{ env.CONTAINER_APP_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --image ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ needs.build.outputs.image_tag }} \
+            --image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.build.outputs.image_tag }} \
             --set-env-vars \
               SPRING_PROFILES_ACTIVE=prod \
               SPRING_DATASOURCE_URL="${{ secrets.DB_URL }}" \
