@@ -73,7 +73,7 @@ feature branch → main (PR/merge) → release (merge) → auto-deploy
 
 1. **Checkout** code
 2. **Login to Azure** using the `AZURE_CREDENTIALS` service principal
-3. **Fetch secrets** from Azure Key Vault
+3. **Fetch secrets** from Azure Key Vault using Azure CLI
 4. **Login to ACR** using credentials from Key Vault
 5. **Build & push** Docker image to ACR (tagged with commit SHA + `latest`)
 6. **Deploy** to Azure Container Apps with environment variables injected from Key Vault

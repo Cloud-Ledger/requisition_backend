@@ -19,17 +19,14 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Get secrets from Key Vault
-        uses: Azure/get-keyvault-secrets@v1
-        with:
-          keyvault: requisition-backend-kv
-          secrets: >-
-            datasource-url,
-            datasource-username,
-            datasource-password,
-            jwt-secret-key,
-            acr-username,
-            acr-password
         id: keyvault
+        run: |
+          echo "acr-username=$(az keyvault secret show --vault-name requisition-backend-kv --name acr-username --query value -o tsv)" >> $GITHUB_OUTPUT
+          echo "acr-password=$(az keyvault secret show --vault-name requisition-backend-kv --name acr-password --query value -o tsv)" >> $GITHUB_OUTPUT
+          echo "datasource-url=$(az keyvault secret show --vault-name requisition-backend-kv --name datasource-url --query value -o tsv)" >> $GITHUB_OUTPUT
+          echo "datasource-username=$(az keyvault secret show --vault-name requisition-backend-kv --name datasource-username --query value -o tsv)" >> $GITHUB_OUTPUT
+          echo "datasource-password=$(az keyvault secret show --vault-name requisition-backend-kv --name datasource-password --query value -o tsv)" >> $GITHUB_OUTPUT
+          echo "jwt-secret-key=$(az keyvault secret show --vault-name requisition-backend-kv --name jwt-secret-key --query value -o tsv)" >> $GITHUB_OUTPUT
 
       - name: Login to ACR
         uses: azure/docker-login@v2
