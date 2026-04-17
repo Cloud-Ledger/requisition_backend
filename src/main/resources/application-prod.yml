@@ -1,9 +1,9 @@
 spring:
   datasource:
     driverClassName: com.microsoft.sqlserver.jdbc.SQLServerDriver
-    url: ${SPRING_DATASOURCE_URL:jdbc:sqlserver://ngonieclz.database.windows.net:1433;database=free-sql-db-2155917;encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;loginTimeout=30;}
-    username: ${SPRING_DATASOURCE_USERNAME:ngonieclz@ngonieclz}
-    password: ${SPRING_DATASOURCE_PASSWORD:}
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
     initialize: false
   jpa:
     hibernate:
@@ -26,15 +26,6 @@ springdoc:
     operationsSorter: method
 
 ---
-# Uncomment below if you need SSL termination at the app level.
-# On Azure Container Apps, SSL is typically handled by the ingress.
-#server:
-#  ssl:
-#    key-alias: server
-#    key-store-type: JKS
-#    key-password: ${SSL_KEY_PASSWORD}
-#    key-store-password: ${SSL_KEYSTORE_PASSWORD}
-#    key-store: classpath:cimas_co_zw.jks
 
 application:
   security:

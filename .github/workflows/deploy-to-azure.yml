@@ -1,0 +1,69 @@
+name: Build and Deploy to Azure Container Apps
+
+on:
+  push:
+    branches:
+      - release
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Get secrets from Key Vault
+        uses: Azure/get-keyvault-secrets@v1
+        with:
+          keyvault: requisition-backend-kv
+          secrets: >-
+            datasource-url,
+            datasource-username,
+            datasource-password,
+            jwt-secret-key,
+            acr-username,
+            acr-password
+        id: keyvault
+
+      - name: Login to ACR
+        uses: azure/docker-login@v2
+        with:
+          login-server: requisitionbackendc.azurecr.io
+          username: ${{ steps.keyvault.outputs.acr-username }}
+          password: ${{ steps.keyvault.outputs.acr-password }}
+
+      - name: Build and push Docker image
+        run: |
+          docker build -t requisitionbackendc.azurecr.io/requisition-backend:${{ github.sha }} .
+          docker build -t requisitionbackendc.azurecr.io/requisition-backend:latest .
+          docker push requisitionbackendc.azurecr.io/requisition-backend:${{ github.sha }}
+          docker push requisitionbackendc.azurecr.io/requisition-backend:latest
+
+      - name: Deploy to Azure Container Apps
+        uses: azure/container-apps-deploy-action@v2
+        with:
+          resourceGroup: requisition-backend-rg
+          containerAppName: requisition-backend-app
+          containerAppEnvironment: requisition-env
+          imageToDeploy: requisitionbackendc.azurecr.io/requisition-backend:${{ github.sha }}
+          registryUrl: requisitionbackendc.azurecr.io
+          registryUsername: ${{ steps.keyvault.outputs.acr-username }}
+          registryPassword: ${{ steps.keyvault.outputs.acr-password }}
+          targetPort: 8080
+          ingress: external
+          environmentVariables: >-
+            SPRING_PROFILES_ACTIVE=prod
+            SPRING_DATASOURCE_URL=${{ steps.keyvault.outputs.datasource-url }}
+            SPRING_DATASOURCE_USERNAME=${{ steps.keyvault.outputs.datasource-username }}
+            SPRING_DATASOURCE_PASSWORD=${{ steps.keyvault.outputs.datasource-password }}
+            JWT_SECRET_KEY=${{ steps.keyvault.outputs.jwt-secret-key }}
+
+      - name: Azure logout
+        run: az logout
+        if: always()
