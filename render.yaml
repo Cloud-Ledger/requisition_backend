@@ -1,0 +1,39 @@
+# ──────────────────────────────────────────────────────────────
+#  Render Blueprint – defines all services for one-click deploy
+#  Docs: https://docs.render.com/blueprint-spec
+# ──────────────────────────────────────────────────────────────
+
+databases:
+  - name: requisition-db
+    plan: free
+    databaseName: requisition_db
+    user: requisition_user
+
+services:
+  - type: web
+    name: requisition-backend
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: SPRING_PROFILES_ACTIVE
+        value: prod
+      - key: SERVER_PORT
+        value: "8080"
+      - key: SPRING_DATASOURCE_URL
+        fromDatabase:
+          name: requisition-db
+          property: connectionString
+          # Render gives a raw postgres:// URL — Spring needs jdbc:postgresql://
+          # We handle this with the JDBC_DATABASE_URL approach below
+      - key: SPRING_DATASOURCE_USERNAME
+        fromDatabase:
+          name: requisition-db
+          property: user
+      - key: SPRING_DATASOURCE_PASSWORD
+        fromDatabase:
+          name: requisition-db
+          property: password
+      - key: JWT_SECRET_KEY
+        generateValue: true
+
