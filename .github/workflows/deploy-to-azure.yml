@@ -21,19 +21,32 @@ jobs:
       - name: Get secrets from Key Vault
         id: keyvault
         run: |
-          echo "acr-username=$(az keyvault secret show --vault-name requisition-backend-kv --name acr-username --query value -o tsv)" >> $GITHUB_OUTPUT
-          echo "acr-password=$(az keyvault secret show --vault-name requisition-backend-kv --name acr-password --query value -o tsv)" >> $GITHUB_OUTPUT
-          echo "datasource-url=$(az keyvault secret show --vault-name requisition-backend-kv --name datasource-url --query value -o tsv)" >> $GITHUB_OUTPUT
-          echo "datasource-username=$(az keyvault secret show --vault-name requisition-backend-kv --name datasource-username --query value -o tsv)" >> $GITHUB_OUTPUT
-          echo "datasource-password=$(az keyvault secret show --vault-name requisition-backend-kv --name datasource-password --query value -o tsv)" >> $GITHUB_OUTPUT
-          echo "jwt-secret-key=$(az keyvault secret show --vault-name requisition-backend-kv --name jwt-secret-key --query value -o tsv)" >> $GITHUB_OUTPUT
+          ACR_USERNAME=$(az keyvault secret show --vault-name requisition-backend-kv --name acr-username --query value -o tsv)
+          ACR_PASSWORD=$(az keyvault secret show --vault-name requisition-backend-kv --name acr-password --query value -o tsv)
+          DATASOURCE_URL=$(az keyvault secret show --vault-name requisition-backend-kv --name datasource-url --query value -o tsv)
+          DATASOURCE_USERNAME=$(az keyvault secret show --vault-name requisition-backend-kv --name datasource-username --query value -o tsv)
+          DATASOURCE_PASSWORD=$(az keyvault secret show --vault-name requisition-backend-kv --name datasource-password --query value -o tsv)
+          JWT_SECRET_KEY=$(az keyvault secret show --vault-name requisition-backend-kv --name jwt-secret-key --query value -o tsv)
+
+          echo "::add-mask::$ACR_PASSWORD"
+          echo "::add-mask::$DATASOURCE_URL"
+          echo "::add-mask::$DATASOURCE_USERNAME"
+          echo "::add-mask::$DATASOURCE_PASSWORD"
+          echo "::add-mask::$JWT_SECRET_KEY"
+
+          echo "acr_username=$ACR_USERNAME" >> $GITHUB_OUTPUT
+          echo "acr_password=$ACR_PASSWORD" >> $GITHUB_OUTPUT
+          echo "datasource_url=$DATASOURCE_URL" >> $GITHUB_OUTPUT
+          echo "datasource_username=$DATASOURCE_USERNAME" >> $GITHUB_OUTPUT
+          echo "datasource_password=$DATASOURCE_PASSWORD" >> $GITHUB_OUTPUT
+          echo "jwt_secret_key=$JWT_SECRET_KEY" >> $GITHUB_OUTPUT
 
       - name: Login to ACR
         uses: azure/docker-login@v2
         with:
           login-server: requisitionbackendc.azurecr.io
-          username: ${{ steps.keyvault.outputs.acr-username }}
-          password: ${{ steps.keyvault.outputs.acr-password }}
+          username: ${{ steps.keyvault.outputs.acr_username }}
+          password: ${{ steps.keyvault.outputs.acr_password }}
 
       - name: Build and push Docker image
         run: |
@@ -50,16 +63,16 @@ jobs:
           containerAppEnvironment: requisition-env
           imageToDeploy: requisitionbackendc.azurecr.io/requisition-backend:${{ github.sha }}
           registryUrl: requisitionbackendc.azurecr.io
-          registryUsername: ${{ steps.keyvault.outputs.acr-username }}
-          registryPassword: ${{ steps.keyvault.outputs.acr-password }}
+          registryUsername: ${{ steps.keyvault.outputs.acr_username }}
+          registryPassword: ${{ steps.keyvault.outputs.acr_password }}
           targetPort: 8080
           ingress: external
           environmentVariables: >-
             SPRING_PROFILES_ACTIVE=prod
-            SPRING_DATASOURCE_URL=${{ steps.keyvault.outputs.datasource-url }}
-            SPRING_DATASOURCE_USERNAME=${{ steps.keyvault.outputs.datasource-username }}
-            SPRING_DATASOURCE_PASSWORD=${{ steps.keyvault.outputs.datasource-password }}
-            JWT_SECRET_KEY=${{ steps.keyvault.outputs.jwt-secret-key }}
+            SPRING_DATASOURCE_URL=${{ steps.keyvault.outputs.datasource_url }}
+            SPRING_DATASOURCE_USERNAME=${{ steps.keyvault.outputs.datasource_username }}
+            SPRING_DATASOURCE_PASSWORD=${{ steps.keyvault.outputs.datasource_password }}
+            JWT_SECRET_KEY=${{ steps.keyvault.outputs.jwt_secret_key }}
 
       - name: Azure logout
         run: az logout
