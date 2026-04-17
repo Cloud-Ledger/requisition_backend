@@ -1,338 +1,232 @@
-# 🚀 Azure Container Apps – CI/CD Setup Guide
+# Azure Deployment Guide
 
-> A step-by-step guide to deploy any Spring Boot project to Azure Container Apps with GitHub Actions CI/CD.
-
----
-
-## Prerequisites
-
-- [Azure CLI](https://docs.microsoft.com/en-us/cli/azure/install-azure-cli) installed
-- [GitHub CLI](https://cli.github.com/) installed and authenticated (`gh auth login`)
-- An active Azure subscription (`az login`)
+This guide covers the full CI/CD pipeline for deploying the Requisition Backend to **Azure Container Apps** using **GitHub Actions** and **Azure Key Vault**.
 
 ---
 
-## 1. Set Your Variables
+## Architecture Overview
 
-Edit these once per project:
-
-```bash
-# ── Project-specific values ──
-PROJECT_NAME="my-app"                  # lowercase, no spaces
-RESOURCE_GROUP="${PROJECT_NAME}-rg"
-ACR_NAME="${PROJECT_NAME}acr"          # must be globally unique, alphanumeric only
-CONTAINER_APP_NAME="${PROJECT_NAME}"
-CONTAINER_APP_ENV="${PROJECT_NAME}-env"
-LOCATION="eastus"
-GITHUB_ORG="Cloud-Ledger"             # your GitHub org or username
-GITHUB_REPO="${PROJECT_NAME}"
+```
+GitHub (release branch)
+    │
+    ▼
+GitHub Actions Workflow
+    │
+    ├── Fetches secrets from Azure Key Vault
+    ├── Builds Docker image
+    ├── Pushes image to Azure Container Registry (ACR)
+    └── Deploys to Azure Container Apps (scale-to-zero)
 ```
 
 ---
 
-## 2. Create Azure Resources
+## Azure Resources
+
+| Resource | Name | Details |
+|---|---|---|
+| Resource Group | `requisition-backend-rg` | South Africa North |
+| Container Apps Environment | `requisition-env` | Consumption plan (scale-to-zero) |
+| Container Registry (ACR) | `requisitionbackendc` | Basic SKU, admin enabled |
+| Key Vault | `requisition-backend-kv` | Standard, stores all secrets |
+| Service Principal | `requisition-backend-sp` | Contributor on resource group, Key Vault Secrets User |
+
+---
+
+## Azure Key Vault Secrets
+
+All sensitive configuration is stored in Key Vault (`requisition-backend-kv`):
+
+| Secret Name | Description |
+|---|---|
+| `datasource-url` | JDBC connection string for Azure SQL Server |
+| `datasource-username` | Database username |
+| `datasource-password` | Database password |
+| `jwt-secret-key` | JWT signing key |
+| `acr-username` | Azure Container Registry username |
+| `acr-password` | Azure Container Registry password |
+
+---
+
+## GitHub Secrets
+
+Only **one** GitHub secret is required:
+
+| Secret | Description |
+|---|---|
+| `AZURE_CREDENTIALS` | Service principal JSON for Azure login |
+
+All other secrets are fetched at deploy time from Azure Key Vault.
+
+---
+
+## CI/CD Pipeline
+
+### Trigger
+
+The workflow triggers on every push to the `release` branch. The intended flow is:
+
+```
+feature branch → main (PR/merge) → release (merge) → auto-deploy
+```
+
+### Workflow Steps
+
+1. **Checkout** code
+2. **Login to Azure** using the `AZURE_CREDENTIALS` service principal
+3. **Fetch secrets** from Azure Key Vault
+4. **Login to ACR** using credentials from Key Vault
+5. **Build & push** Docker image to ACR (tagged with commit SHA + `latest`)
+6. **Deploy** to Azure Container Apps with environment variables injected from Key Vault
+7. **Logout** from Azure
+
+### Workflow File
+
+Located at `.github/workflows/deploy-to-azure.yml`
+
+---
+
+## Setup From Scratch
+
+### 1. Create Azure Resources
 
 ```bash
 # Login
 az login
 
-# Register providers (only needed once per subscription)
-az provider register --namespace Microsoft.ContainerRegistry --wait
+# Create resource group
+az group create --name requisition-backend-rg --location southafricanorth
+
+# Register providers
 az provider register --namespace Microsoft.App --wait
 az provider register --namespace Microsoft.OperationalInsights --wait
+az provider register --namespace Microsoft.ContainerRegistry --wait
 
-# Create resource group
-az group create --name $RESOURCE_GROUP --location $LOCATION
+# Create Container Apps environment (consumption plan, scale-to-zero)
+az containerapp env create \
+  --name requisition-env \
+  --resource-group requisition-backend-rg \
+  --location southafricanorth
 
-# Create container registry
-az acr create --resource-group $RESOURCE_GROUP --name $ACR_NAME --sku Basic --admin-enabled true
+# Create Container Registry (or use Azure Portal)
+az acr create \
+  --name requisitionbackendc \
+  --resource-group requisition-backend-rg \
+  --location southafricanorth \
+  --sku Basic \
+  --admin-enabled true
 
-# Create container apps environment
-az containerapp env create --name $CONTAINER_APP_ENV --resource-group $RESOURCE_GROUP --location $LOCATION
+# Create Key Vault
+az keyvault create \
+  --name requisition-backend-kv \
+  --resource-group requisition-backend-rg \
+  --location southafricanorth \
+  --sku standard
 ```
 
----
-
-## 3. Create Service Principal + OIDC Federation
+### 2. Create Service Principal
 
 ```bash
-# Get subscription ID
-SUB_ID=$(az account show --query id -o tsv)
-
-# Create service principal
 az ad sp create-for-rbac \
-  --name "github-${PROJECT_NAME}" \
+  --name "requisition-backend-sp" \
   --role contributor \
-  --scopes /subscriptions/$SUB_ID/resourceGroups/$RESOURCE_GROUP \
-  --sdk-auth > /tmp/sp-creds.json
-
-# Extract client ID
-CLIENT_ID=$(cat /tmp/sp-creds.json | grep clientId | cut -d '"' -f4)
-TENANT_ID=$(cat /tmp/sp-creds.json | grep tenantId | head -1 | cut -d '"' -f4)
-
-# Grant ACR push permission
-ACR_ID=$(az acr show --name $ACR_NAME --query id -o tsv)
-az role assignment create --assignee $CLIENT_ID --role AcrPush --scope $ACR_ID
-
-# Create OIDC federation for GitHub Actions
-az ad app federated-credential create --id $CLIENT_ID --parameters "{
-  \"name\": \"github-actions-main\",
-  \"issuer\": \"https://token.actions.githubusercontent.com\",
-  \"subject\": \"repo:${GITHUB_ORG}/${GITHUB_REPO}:ref:refs/heads/main\",
-  \"audiences\": [\"api://AzureADTokenExchange\"]
-}"
-
-# Print values you'll need
-echo ""
-echo "=== Save these values ==="
-echo "CLIENT_ID:       $CLIENT_ID"
-echo "TENANT_ID:       $TENANT_ID"
-echo "SUBSCRIPTION_ID: $SUB_ID"
-
-# Cleanup
-rm /tmp/sp-creds.json
+  --scopes /subscriptions/<SUBSCRIPTION_ID>/resourceGroups/requisition-backend-rg \
+  --sdk-auth
 ```
+
+Copy the JSON output — this becomes the `AZURE_CREDENTIALS` GitHub secret.
+
+### 3. Assign Key Vault Access
+
+In the Azure Portal:
+
+1. Go to **Key Vault** → **Access control (IAM)**
+2. Add role **Key Vault Secrets Officer** to your own account (to manage secrets)
+3. Add role **Key Vault Secrets User** to the service principal `requisition-backend-sp` (for CI/CD reads)
+
+### 4. Add Secrets to Key Vault
+
+In the Azure Portal:
+
+1. Go to **Key Vault** → **Objects** → **Secrets**
+2. Click **+ Generate/Import** and add each secret listed in the [Key Vault Secrets](#azure-key-vault-secrets) table above
+
+### 5. Add GitHub Secret
+
+1. Go to your GitHub repo → **Settings** → **Secrets and variables** → **Actions**
+2. Add `AZURE_CREDENTIALS` with the service principal JSON
+
+### 6. Deploy
+
+Merge `main` into `release` — the workflow will automatically build and deploy.
 
 ---
 
-## 4. Create GitHub Repo & Push
+## Container Apps Configuration
 
+- **Ingress**: External (publicly accessible)
+- **Target port**: 8080
+- **Scaling**: 0–1 replicas (scales to zero when idle = no cost)
+- **Spring profile**: `prod` (set via `SPRING_PROFILES_ACTIVE` env var)
+
+---
+
+## Dockerfile
+
+Multi-stage build:
+
+1. **Build stage**: Uses `maven:3.9.6-eclipse-temurin-17-alpine` to compile the JAR
+2. **Run stage**: Uses `eclipse-temurin:17-jre-alpine` for a minimal runtime image
+
+---
+
+## Profiles
+
+| Profile | File | Usage |
+|---|---|---|
+| `local` | `application-local.yml` | Local development |
+| `prod` | `application-prod.yml` | Azure deployment (SQL Server) |
+
+The active profile is set via `SPRING_PROFILES_ACTIVE` environment variable (defaults to `local`).
+
+---
+
+## Costs
+
+This setup is designed for **minimal cost**:
+
+- **Container Apps** (Consumption): Free when scaled to zero, pay only for active usage
+- **Container Registry** (Basic): ~$0.167/day (~$5/month)
+- **Key Vault** (Standard): $0.03 per 10,000 operations (negligible)
+- **Log Analytics Workspace**: Free tier up to 5GB/month
+
+---
+
+## Troubleshooting
+
+### View container logs
 ```bash
-cd /path/to/your/project
-
-git init
-git add .
-git commit -m "Initial commit"
-
-gh repo create ${GITHUB_ORG}/${GITHUB_REPO} --public --source=. --remote=origin --push
+az containerapp logs show \
+  --name requisition-backend-app \
+  --resource-group requisition-backend-rg \
+  --follow
 ```
 
----
-
-## 5. Add GitHub Secrets
-
+### Check container app status
 ```bash
-REPO="${GITHUB_ORG}/${GITHUB_REPO}"
-
-# Azure identity (from step 3)
-gh secret set AZURE_CLIENT_ID       --repo $REPO --body "$CLIENT_ID"
-gh secret set AZURE_TENANT_ID       --repo $REPO --body "$TENANT_ID"
-gh secret set AZURE_SUBSCRIPTION_ID --repo $REPO --body "$SUB_ID"
-
-# App secrets (edit these per project)
-gh secret set DB_URL       --repo $REPO --body 'your-jdbc-connection-string'
-gh secret set DB_USERNAME  --repo $REPO --body 'your-db-username'
-gh secret set DB_PASSWORD  --repo $REPO --body 'your-db-password'
-gh secret set JWT_SECRET_KEY --repo $REPO --body 'your-jwt-secret'
-```
-
----
-
-## 6. Required Project Files
-
-### `.github/workflows/deploy-azure.yml`
-
-```yaml
-name: Build & Deploy to Azure Container Apps
-
-on:
-  push:
-    branches: [main]
-  workflow_dispatch:
-
-env:
-  ACR_NAME: myappacr                    # ← change per project
-  IMAGE_NAME: my-app                    # ← change per project
-  RESOURCE_GROUP: my-app-rg             # ← change per project
-  CONTAINER_APP_NAME: my-app            # ← change per project
-  CONTAINER_APP_ENV: my-app-env         # ← change per project
-
-permissions:
-  id-token: write
-  contents: read
-
-jobs:
-  build:
-    name: 🏗️ Build & Push
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Login to Azure
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Login to ACR
-        run: az acr login --name ${{ env.ACR_NAME }}
-
-      - name: Set tag
-        id: tag
-        run: echo "TAG=$(echo $GITHUB_SHA | head -c 7)" >> "$GITHUB_OUTPUT"
-
-      - name: Build & push image
-        run: |
-          docker build \
-            -t ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.TAG }} \
-            -t ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest .
-          docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.TAG }}
-          docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest
-    outputs:
-      image_tag: ${{ steps.tag.outputs.TAG }}
-
-  deploy:
-    name: 🚀 Deploy
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Login to Azure
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Deploy Container App
-        run: |
-          az containerapp create \
-            --name ${{ env.CONTAINER_APP_NAME }} \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --environment ${{ env.CONTAINER_APP_ENV }} \
-            --image ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ needs.build.outputs.image_tag }} \
-            --registry-server ${{ env.ACR_NAME }}.azurecr.io \
-            --target-port 8080 \
-            --ingress external \
-            --env-vars \
-              SPRING_PROFILES_ACTIVE=prod \
-              SPRING_DATASOURCE_URL="${{ secrets.DB_URL }}" \
-              SPRING_DATASOURCE_USERNAME="${{ secrets.DB_USERNAME }}" \
-              SPRING_DATASOURCE_PASSWORD="${{ secrets.DB_PASSWORD }}" \
-              JWT_SECRET_KEY="${{ secrets.JWT_SECRET_KEY }}" \
-              SERVER_PORT=8080 \
-            --min-replicas 0 --max-replicas 1 || \
-          az containerapp update \
-            --name ${{ env.CONTAINER_APP_NAME }} \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --image ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ needs.build.outputs.image_tag }} \
-            --set-env-vars \
-              SPRING_PROFILES_ACTIVE=prod \
-              SPRING_DATASOURCE_URL="${{ secrets.DB_URL }}" \
-              SPRING_DATASOURCE_USERNAME="${{ secrets.DB_USERNAME }}" \
-              SPRING_DATASOURCE_PASSWORD="${{ secrets.DB_PASSWORD }}" \
-              JWT_SECRET_KEY="${{ secrets.JWT_SECRET_KEY }}" \
-              SERVER_PORT=8080
-```
-
-### `Dockerfile` (multi-stage Spring Boot)
-
-```dockerfile
-FROM maven:3.9.6-eclipse-temurin-17-alpine AS build
-WORKDIR /app
-COPY pom.xml .
-RUN mvn dependency:go-offline -B
-COPY src ./src
-RUN mvn clean package -DskipTests -B
-
-FROM eclipse-temurin:17-jre-alpine
-WORKDIR /app
-COPY --from=build /app/target/*.jar app.jar
-EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "app.jar"]
-```
-
-### `.dockerignore`
-
-```
-.git
-.gitignore
-target/
-*.md
-LICENSE
-.idea/
-*.iml
-attachments/
-```
-
-### `application.properties`
-
-```properties
-spring.profiles.active=${SPRING_PROFILES_ACTIVE:local}
-```
-
-### `application-prod.yml` (template)
-
-```yaml
-spring:
-  datasource:
-    url: ${SPRING_DATASOURCE_URL}
-    username: ${SPRING_DATASOURCE_USERNAME}
-    password: ${SPRING_DATASOURCE_PASSWORD}
-  jpa:
-    hibernate:
-      ddl-auto: update
-    show-sql: false
-
-server:
-  port: ${SERVER_PORT:8080}
-
-application:
-  security:
-    jwt:
-      secret-key: ${JWT_SECRET_KEY}
-```
-
-### `.gitignore` (essentials)
-
-```
-target/
-.idea/
-*.iml
-.DS_Store
-.env
-attachments/
-*.class
-*.jar
-```
-
----
-
-## 7. Verify Deployment
-
-```bash
-# Get app URL
 az containerapp show \
-  --name $CONTAINER_APP_NAME \
-  --resource-group $RESOURCE_GROUP \
-  --query "properties.configuration.ingress.fqdn" -o tsv
-
-# Test
-curl https://<your-app-url>/actuator/health
-# Swagger: https://<your-app-url>/swagger-ui/index.html
+  --name requisition-backend-app \
+  --resource-group requisition-backend-rg \
+  --query "properties.runningStatus"
 ```
 
----
-
-## 8. Tear Down (when no longer needed)
-
+### Restart container
 ```bash
-# Delete everything in the resource group
-az group delete --name $RESOURCE_GROUP --yes --no-wait
-
-# Delete the service principal
-az ad app delete --id $CLIENT_ID
+az containerapp revision restart \
+  --name requisition-backend-app \
+  --resource-group requisition-backend-rg \
+  --revision <revision-name>
 ```
 
----
-
-## Quick Reference – What Changes Per Project
-
-| Item | What to change |
-|------|---------------|
-| Variables in Step 1 | `PROJECT_NAME`, `GITHUB_ORG`, `GITHUB_REPO` |
-| Workflow `env:` block | `ACR_NAME`, `IMAGE_NAME`, `RESOURCE_GROUP`, `CONTAINER_APP_NAME`, `CONTAINER_APP_ENV` |
-| GitHub Secrets | `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `JWT_SECRET_KEY` |
-| `Dockerfile` | Update base image if not Java 17 |
-| `application-prod.yml` | Add/remove env vars for your app |
+### Check GitHub Actions workflow
+Go to your repo → **Actions** tab → click the latest workflow run to see logs.
 
